@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import { Eye, ShieldCheck, Wand2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useWallet } from "../context/WalletContext";
 import { useRunner } from "../hooks/useRunner";
@@ -12,6 +12,7 @@ import { MAX_NOTE_LENGTH, RECHECK_COOLDOWN_SECONDS, validateUsername } from "../
 import { formatWait, isoToUnixSeconds } from "../lib/format";
 import { isContractConfigured } from "../lib/networks";
 import { ClaimReceipt } from "../components/receipt";
+import { findLatestMergedPr, previewCheck, type PreviewResult } from "../lib/preview";
 import { ClaimTarget } from "../components/ClaimTarget";
 import { Button, CopyButton, HelperText, Input, Label, Notice, PageHeader, Textarea } from "../components/ui";
 
@@ -58,6 +59,34 @@ export function Claim() {
     if (attestation && !note && attestation.note) setNote(attestation.note);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attestation]);
+
+  // Sandbox: autofill from GitHub, and a free preview of what the validators would decide.
+  const [sandboxBusy, setSandboxBusy] = useState<"autofill" | "preview" | null>(null);
+  const [sandboxMsg, setSandboxMsg] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
+
+  const onAutofill = async () => {
+    setSandboxBusy("autofill");
+    setSandboxMsg(null);
+    setPreview(null);
+    const found = await findLatestMergedPr(username);
+    if ("error" in found) setSandboxMsg(found.error);
+    else {
+      target.setRepo(found.repoUrl);
+      target.setPr(String(found.pr));
+      setSandboxMsg(`Filled in ${found.repoUrl.replace("https://github.com/", "")} #${found.pr}.`);
+    }
+    setSandboxBusy(null);
+  };
+
+  const onPreview = async () => {
+    if (!address || !target.repoUrl || target.prNumber === null) return;
+    const [, owner, repo] = target.repoUrl.match(/github\.com\/([^/]+)\/([^/]+)$/) ?? [];
+    setSandboxBusy("preview");
+    setSandboxMsg(null);
+    setPreview(await previewCheck(owner, repo, target.prNumber, username, address));
+    setSandboxBusy(null);
+  };
 
   const usernameError = username.trim() ? validateUsername(username) : null;
   const canRegister =
@@ -167,6 +196,49 @@ export function Claim() {
                 placeholder="What the change did"
               />
             </div>
+            <div className="rounded-md border border-deep-600 bg-deep-950/60 p-3">
+              <p className="text-[12.5px] font-medium text-mist-200">Testing? Try the sandbox</p>
+              <p className="mt-1 text-[12.5px] text-mist-500">
+                Enter a GitHub username, then autofill its latest merged pull request. The preview asks GitHub the same two
+                questions the validators will, for free and with no transaction.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={onAutofill}
+                  disabled={!username.trim() || !!usernameError || sandboxBusy !== null}
+                  loading={sandboxBusy === "autofill"}
+                  icon={<Wand2 className="h-4 w-4" aria-hidden />}
+                >
+                  Autofill latest merged PR
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={onPreview}
+                  disabled={!address || !target.repoUrl || target.prNumber === null || !username.trim() || !!usernameError || sandboxBusy !== null}
+                  loading={sandboxBusy === "preview"}
+                  icon={<Eye className="h-4 w-4" aria-hidden />}
+                >
+                  Preview check (free)
+                </Button>
+              </div>
+              {sandboxMsg && <p className="mt-2 text-[12.5px] text-mist-400">{sandboxMsg}</p>}
+              {preview && (
+                <div className="mt-3 space-y-2">
+                  <Notice tone={preview.pr.status === "MERGED_BY_AUTHOR" ? "success" : "warn"} title="Pull request">
+                    {preview.pr.detail}
+                  </Notice>
+                  <Notice tone={preview.bio.status === "ADDRESS_FOUND" ? "success" : "warn"} title="GitHub bio">
+                    {preview.bio.detail}
+                  </Notice>
+                  <Notice tone={preview.wouldVerify ? "success" : "info"} title={preview.wouldVerify ? "This claim should verify" : "Not ready yet"}>
+                    {preview.wouldVerify
+                      ? "Both checks pass. Register the claim, then run the check."
+                      : "Fix the items above, then preview again. Only the on-chain check counts."}
+                  </Notice>
+                </div>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={onRegister} disabled={!canRegister || busy !== null} loading={busy === "register"}>
                 {registered ? "Update claim" : "Register claim"}
@@ -195,8 +267,13 @@ export function Claim() {
             {waitLeft > 0 && !verified && (
               <p className="text-[12.5px] text-mist-500">You can check again in {formatWait(waitLeft)}.</p>
             )}
-            {!registered && target.repoUrl && target.prNumber !== null && address && (
-              <p className="text-[12.5px] text-mist-500">Register the claim first.</p>
+            {!address && <p className="text-[12.5px] text-mist-500">Connect a wallet first.</p>}
+            {address && !registered && (
+              <p className="text-[12.5px] text-mist-500">
+                {target.repoUrl && target.prNumber !== null
+                  ? "Register the claim first."
+                  : "Fill in the repository and PR number in step 2, then register the claim."}
+              </p>
             )}
           </div>
         </Step>
