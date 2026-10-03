@@ -72,3 +72,20 @@ describe("pull request links", () => {
     expect(pullRequestUrl(key)).toBe("https://github.com/vercel/next.js/pull/7");
   });
 });
+
+import { evaluateBio, evaluatePr } from "./preview";
+
+describe("preview checks mirror the contract", () => {
+  it("accepts a merged PR by the claimed user, any case", () => {
+    expect(evaluatePr({ merged: true, merged_at: "2026-01-01T00:00:00Z", user: { login: "Octocat" } }, "octocat").status).toBe("MERGED_BY_AUTHOR");
+  });
+  it("rejects unmerged or someone else's PR", () => {
+    expect(evaluatePr({ merged: false, user: { login: "octocat" } }, "octocat").status).toBe("NOT_MERGED_OR_WRONG_AUTHOR");
+    expect(evaluatePr({ merged: true, user: { login: "other" } }, "octocat").status).toBe("NOT_MERGED_OR_WRONG_AUTHOR");
+  });
+  it("finds the address in a bio, ignoring case", () => {
+    expect(evaluateBio({ login: "a", bio: "hi 0xABCDEF" }, "0xabcdef").status).toBe("ADDRESS_FOUND");
+    expect(evaluateBio({ login: "a", bio: "hello" }, "0xabcdef").status).toBe("ADDRESS_NOT_FOUND");
+    expect(evaluateBio({ login: "a", bio: null }, "0xabcdef").status).toBe("ADDRESS_NOT_FOUND");
+  });
+});
