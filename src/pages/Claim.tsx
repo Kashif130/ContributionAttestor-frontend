@@ -65,6 +65,11 @@ export function Claim() {
   const [sandboxMsg, setSandboxMsg] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
 
+  // A preview describes one exact set of inputs, so drop it as soon as any of them change.
+  useEffect(() => {
+    setPreview(null);
+  }, [target.repoUrl, target.prNumber, username, address]);
+
   const onAutofill = async () => {
     setSandboxBusy("autofill");
     setSandboxMsg(null);
