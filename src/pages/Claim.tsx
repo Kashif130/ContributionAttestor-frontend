@@ -81,7 +81,7 @@ export function Claim() {
 
   const onPreview = async () => {
     if (!address || !target.repoUrl || target.prNumber === null) return;
-    const [, owner, repo] = target.repoUrl.match(/github\.com\/([^/]+)\/([^/]+)$/) ?? [];
+    const [owner, repo] = target.repoUrl.replace("https://github.com/", "").split("/");
     setSandboxBusy("preview");
     setSandboxMsg(null);
     setPreview(await previewCheck(owner, repo, target.prNumber, username, address));
